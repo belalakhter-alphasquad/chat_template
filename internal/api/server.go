@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/belalakhter-alphasquad/chat_template/internal/chat"
+	"github.com/belalakhter-alphasquad/chat_template/utils"
 	"github.com/gorilla/mux"
-	"practice.example/internal/chat"
-	"practice.example/utils"
 )
 
 type server interface {

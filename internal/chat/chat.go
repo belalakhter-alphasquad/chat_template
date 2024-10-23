@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/belalakhter-alphasquad/chat_template/utils"
 	"github.com/gorilla/websocket"
-	"practice.example/utils"
 )
 
 var chatService *Chat
@@ -85,7 +85,10 @@ func (c *Chat) Reader(client *Client, user string) {
 	for {
 		var data Message
 		_, msg, err := client.conn.ReadMessage()
-		json.Unmarshal(msg, data)
+		if err != nil {
+			utils.LogMessage(err.Error(), 1)
+		}
+		err = json.Unmarshal(msg, data)
 		if err != nil {
 			utils.LogMessage(err.Error(), 1)
 		}

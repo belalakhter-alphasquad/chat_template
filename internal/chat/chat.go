@@ -95,7 +95,7 @@ func (c *Chat) Reader(client *Client, user string) {
 		var data Message
 		_, msg, err := client.conn.ReadMessage()
 		if err != nil {
-			utils.LogMessage(err.Error(), 1)
+			utils.LogMessage(err.Error(), 2)
 			break
 		}
 		err = json.Unmarshal(msg, &data)
@@ -136,6 +136,7 @@ func (c *Chat) Writer() {
 }
 
 func (c *Chat) BroadCastWorker(msg []byte) {
+
 	for user, Conn := range c.Clients {
 		message := map[string]string{
 			"user": user,
@@ -145,7 +146,7 @@ func (c *Chat) BroadCastWorker(msg []byte) {
 		if err != nil {
 			utils.LogMessage(err.Error(), 2)
 		}
-		Conn.conn.WriteJSON(data)
+		Conn.conn.WriteMessage(websocket.TextMessage, data)
 
 	}
 }
@@ -159,6 +160,6 @@ func (c *Chat) UnicastWorker(user *Client, msg []byte) {
 	if err != nil {
 		utils.LogMessage(err.Error(), 2)
 	}
-	user.conn.WriteJSON(data)
+	user.conn.WriteMessage(websocket.TextMessage, data)
 
 }

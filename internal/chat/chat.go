@@ -69,7 +69,7 @@ func UpgradeConnectionWs(w http.ResponseWriter, r *http.Request) {
 
 		utils.LogMessage(err.Error(), 2)
 		http.Error(w, "Failed to upgrade connection", http.StatusInternalServerError)
-		panic("stop")
+
 		return
 	}
 	params := r.URL.Query()

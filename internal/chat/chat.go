@@ -3,7 +3,6 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -67,11 +66,18 @@ func UpgradeConnectionWs(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+
+		utils.LogMessage(err.Error(), 2)
+		http.Error(w, "Failed to upgrade connection", http.StatusInternalServerError)
+		panic("stop")
 		return
 	}
 	params := r.URL.Query()
 	user := params.Get("user")
+	if user == "" {
+		http.Error(w, "User not defined", int(http.StatusConflict))
+		conn.Close()
+	}
 	client := &Client{conn: conn}
 	chatService.Clients[user] = client
 	chatService.Register <- []byte(fmt.Sprintf("User has Joined %v", user))
@@ -80,6 +86,11 @@ func UpgradeConnectionWs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Chat) Reader(client *Client, user string) {
+	defer func() {
+		client.conn.Close()
+		chatService.UnRegister <- []byte(fmt.Sprintf("User has left the chat %v", user))
+		delete(c.Clients, user)
+	}()
 	client.conn.SetReadLimit(maxMessageSize)
 	client.conn.SetReadDeadline(time.Now().Add(Wait))
 	for {
@@ -87,23 +98,22 @@ func (c *Chat) Reader(client *Client, user string) {
 		_, msg, err := client.conn.ReadMessage()
 		if err != nil {
 			utils.LogMessage(err.Error(), 1)
+			break
 		}
-		err = json.Unmarshal(msg, data)
+		err = json.Unmarshal(msg, &data)
 		if err != nil {
 			utils.LogMessage(err.Error(), 1)
+			continue
 		}
-		if client.conn.Close() != nil {
-			chatService.UnRegister <- []byte(fmt.Sprintf("User has left the chat %v", user))
-		} else {
-			switch data.Type {
-			case 1:
-				chatService.BroadCast <- []byte(data.Content)
-			case 2:
-				uni := map[*Client][]byte{
-					client: []byte(data.Content),
-				}
-				chatService.Unicast <- uni
+
+		switch data.Type {
+		case 1:
+			chatService.BroadCast <- []byte(data.Content)
+		case 2:
+			uni := map[*Client][]byte{
+				client: []byte(data.Content),
 			}
+			chatService.Unicast <- uni
 		}
 
 	}

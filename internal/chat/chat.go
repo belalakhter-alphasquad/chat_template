@@ -13,8 +13,8 @@ import (
 var chatService *Chat
 
 const (
-	Wait           = 60 * time.Second
-	maxMessageSize = 512
+	Wait           = 60000 * time.Second
+	maxMessageSize = 2048
 )
 
 type chat interface {
@@ -66,10 +66,8 @@ func UpgradeConnectionWs(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-
 		utils.LogMessage(err.Error(), 2)
 		http.Error(w, "Failed to upgrade connection", http.StatusInternalServerError)
-
 		return
 	}
 	params := r.URL.Query()
@@ -108,6 +106,7 @@ func (c *Chat) Reader(client *Client, user string) {
 
 		switch data.Type {
 		case 1:
+
 			chatService.BroadCast <- []byte(data.Content)
 		case 2:
 			uni := map[*Client][]byte{
@@ -119,17 +118,21 @@ func (c *Chat) Reader(client *Client, user string) {
 	}
 }
 func (c *Chat) Writer() {
+	for {
 
-	select {
-	case data := <-chatService.BroadCast:
-		go c.BroadCastWorker(data)
-	case data := <-chatService.Unicast:
-		for user, msg := range data {
-			go c.UnicastWorker(user, msg)
+		select {
+		case data := <-chatService.BroadCast:
+			go c.BroadCastWorker(data)
+		case data := <-chatService.Unicast:
+			for user, msg := range data {
+				go c.UnicastWorker(user, msg)
+			}
+		case data := <-chatService.Register:
+			go c.BroadCastWorker(data)
+		case data := <-chatService.UnRegister:
+			go c.BroadCastWorker(data)
 		}
-
 	}
-
 }
 
 func (c *Chat) BroadCastWorker(msg []byte) {

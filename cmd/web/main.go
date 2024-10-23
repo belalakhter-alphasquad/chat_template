@@ -6,13 +6,15 @@ import (
 	"syscall"
 
 	"github.com/belalakhter-alphasquad/chat_template/internal/api"
+	"github.com/belalakhter-alphasquad/chat_template/internal/buffer"
 	"github.com/belalakhter-alphasquad/chat_template/internal/chat"
 	"github.com/belalakhter-alphasquad/chat_template/utils"
 )
 
 func main() {
 	api.NewServer()
-	chat.SetupChat()
+	buf := buffer.NewBuffer()
+	chat.SetupChat(buf)
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTSTP, syscall.SIGQUIT, syscall.SIGTERM)
 

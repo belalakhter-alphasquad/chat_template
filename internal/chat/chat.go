@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/belalakhter-alphasquad/chat_template/internal/buffer"
 	"github.com/belalakhter-alphasquad/chat_template/utils"
 	"github.com/gorilla/websocket"
 )
@@ -24,8 +25,9 @@ type chat interface {
 
 type Chat struct {
 	Clients    map[string]*Client
-	Register   chan []byte
-	UnRegister chan []byte
+	Buffer     *buffer.Buffer
+	Register   chan map[*Client][]byte
+	UnRegister chan map[*Client][]byte
 	Unicast    chan map[*Client][]byte
 	BroadCast  chan []byte
 }
@@ -42,14 +44,16 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-func SetupChat() {
+func SetupChat(buf *buffer.Buffer) {
 	if chatService != nil {
 		chatService = nil
 	}
+	buf.BufferWorker()
 	chatService = &Chat{
 		Clients:    make(map[string]*Client),
-		Register:   make(chan []byte),
-		UnRegister: make(chan []byte),
+		Buffer:     buf,
+		Register:   make(chan map[*Client][]byte),
+		UnRegister: make(chan map[*Client][]byte),
 		Unicast:    make(chan map[*Client][]byte),
 		BroadCast:  make(chan []byte),
 	}
@@ -78,7 +82,12 @@ func UpgradeConnectionWs(w http.ResponseWriter, r *http.Request) {
 	}
 	client := &Client{conn: conn}
 	chatService.Clients[user] = client
-	chatService.Register <- []byte(fmt.Sprintf("User has Joined %v", user))
+
+	go chatService.PumpMessages(client, chatService.Buffer.Messages)
+	Notify := map[*Client][]byte{
+		client: []byte(fmt.Sprintf("User has Joined %v", user)),
+	}
+	chatService.Register <- Notify
 
 	go chatService.Reader(client, user)
 }
@@ -86,7 +95,10 @@ func UpgradeConnectionWs(w http.ResponseWriter, r *http.Request) {
 func (c *Chat) Reader(client *Client, user string) {
 	defer func() {
 		client.conn.Close()
-		chatService.UnRegister <- []byte(fmt.Sprintf("User has left the chat %v", user))
+		Notify := map[*Client][]byte{
+			client: []byte(fmt.Sprintf("User has left %v", user)),
+		}
+		chatService.UnRegister <- Notify
 		delete(c.Clients, user)
 	}()
 	client.conn.SetReadLimit(maxMessageSize)
@@ -108,7 +120,13 @@ func (c *Chat) Reader(client *Client, user string) {
 		case 1:
 
 			chatService.BroadCast <- []byte(data.Content)
+			c.Buffer.Pipe <- buffer.Messages{
+				Msg:  data.Content,
+				User: user,
+			}
+
 		case 2:
+
 			uni := map[*Client][]byte{
 				client: []byte(data.Content),
 			}
@@ -128,9 +146,13 @@ func (c *Chat) Writer() {
 				go c.UnicastWorker(user, msg)
 			}
 		case data := <-chatService.Register:
-			go c.BroadCastWorker(data)
+			for user, msg := range data {
+				go c.UnicastWorker(user, msg)
+			}
 		case data := <-chatService.UnRegister:
-			go c.BroadCastWorker(data)
+			for user, msg := range data {
+				go c.UnicastWorker(user, msg)
+			}
 		}
 	}
 }
@@ -162,4 +184,16 @@ func (c *Chat) UnicastWorker(user *Client, msg []byte) {
 	}
 	user.conn.WriteMessage(websocket.TextMessage, data)
 
+}
+
+func (c *Chat) PumpMessages(user *Client, msgs []buffer.Messages) {
+	for _, message := range msgs {
+
+		data, err := json.Marshal(message)
+		if err != nil {
+			utils.LogMessage(err.Error(), 2)
+		}
+
+		user.conn.WriteMessage(websocket.TextMessage, data)
+	}
 }
